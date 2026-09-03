@@ -1,10 +1,10 @@
-// Progress engine: explainable, per-exercise comparisons under similar conditions.
-// Core idea: compare reps at the SAME load + SAME tempo modifier with RIR taken into account.
-import { getExercise, TEMPO_PROGRESSION, TEMPO_MAP } from '../data/exercises.js';
+// Progress motoru: açıklanabilir, egzersiz bazlı, benzer koşullar altında karşılaştırma.
+// Temel fikir: AYNI yük + AYNI tempo modifier altında tekrarları, RIR'ı hesaba katarak karşılaştır.
+import { getExercise, TEMPO_PROGRESSION, TEMPO_MAP, bandLevelLabel } from '../data/exercises.js';
 
 const EXCLUDED = new Set(['gyroball', 'hand_gripper']);
 
-// Load key: what makes two sets "comparable" in load terms.
+// Yük anahtarı: iki seti "karşılaştırılabilir" yapan şey.
 export function loadKey(set) {
   if (set.bandId || set.bandResistance) return `band:${set.bandId || ''}:${set.bandResistance || ''}`;
   if (set.weight == null) return 'bw';
@@ -13,13 +13,22 @@ export function loadKey(set) {
 export function loadLabel(set, state) {
   if (set.bandId || set.bandResistance) {
     const band = state?.settings.bands.find(b => b.id === set.bandId);
-    return band ? `${band.name} (${band.level})` : (set.bandResistance || 'Band');
+    return band ? `${band.name} (${bandLevelLabel(band.level)})` : (bandLevelLabel(set.bandResistance) || 'Band');
   }
-  if (set.weight == null) return 'Bodyweight';
+  if (set.weight == null || set.weight === 0) return 'Vücut ağırlığı';
   return `${set.weight} kg`;
 }
 
-// All completed sessions containing this exercise, oldest → newest.
+// Tekrarları okunur biçimde: tek taraflı hareketlerde set başına "SolxSağ".
+export function repsLabel(sets) {
+  if (!sets.length) return '';
+  if (!sets.some(s => s.side)) return sets.map(s => s.reps).join(' / ');
+  const bySet = {};
+  for (const s of sets) { bySet[s.setNumber] = bySet[s.setNumber] || {}; bySet[s.setNumber][s.side || 'L'] = s.reps; }
+  return Object.keys(bySet).sort((a, b) => a - b).map(k => { const v = bySet[k]; return `${v.L ?? '–'}|${v.R ?? '–'}`; }).join(' / ');
+}
+
+// Bu egzersizi içeren tamamlanmış seanslar, eskiden yeniye.
 export function exerciseHistory(state, exerciseId) {
   const out = [];
   for (const session of state.sessions) {
@@ -31,17 +40,23 @@ export function exerciseHistory(state, exerciseId) {
   return out;
 }
 
-export function lastPerformance(state, exerciseId) {
+// Son performans. templateId verilirse önce aynı antrenman günündeki son seans tercih edilir
+// (AĞIR ve HAFİF günlerin RIR hedefleri farklı olduğu için).
+export function lastPerformance(state, exerciseId, templateId) {
   const h = exerciseHistory(state, exerciseId);
-  return h.length ? h[h.length - 1] : null;
+  if (!h.length) return null;
+  if (templateId) {
+    for (let i = h.length - 1; i >= 0; i--) if (h[i].session.templateId === templateId) return { ...h[i], sameTemplate: true };
+  }
+  return { ...h[h.length - 1], sameTemplate: !templateId };
 }
 
-// Per-session summary used everywhere.
+// Seans özeti.
 export function summarize(sets) {
   const reps = sets.map(s => s.reps || 0);
   const total = reps.reduce((a, b) => a + b, 0);
   const avgRir = sets.length ? sets.reduce((a, s) => a + (s.rir ?? 0), 0) / sets.length : 0;
-  // Effective reps: reps + RIR ≈ reps to failure. Lets a 20 @ 3 RIR compare with 23 @ 0 RIR.
+  // Etkili tekrar: reps + RIR ≈ failure'a kadar tekrar. 20 @ 3 RIR ile 23 @ 0 RIR karşılaştırılabilir olur.
   const effAvg = sets.length ? sets.reduce((a, s) => a + (s.reps || 0) + (s.rir ?? 0), 0) / sets.length : 0;
   const dominant = dominantKey(sets);
   return { reps, total, avgRir, effAvg, sets: sets.length, loadKey: dominant.loadKey, tempo: dominant.tempo, weight: dominant.weight };
@@ -57,29 +72,28 @@ function dominantKey(sets) {
   return Object.values(counts).sort((a, b) => b.n - a.n)[0] || { loadKey: 'bw', tempo: 'normal', weight: null };
 }
 
-// Trend across the last 3–5 sessions under the same conditions as the most recent one.
+// Son seansla aynı koşullardaki son 3–5 seans üzerinden trend.
 export function trend(state, exerciseId) {
   const hist = exerciseHistory(state, exerciseId);
-  if (!hist.length) return { status: 'none', label: 'NO DATA', comparable: [] };
+  if (!hist.length) return { status: 'none', label: 'VERİ YOK', comparable: [] };
   const latest = summarize(hist[hist.length - 1].sets);
   const comparable = hist
     .map(h => ({ ...h, sum: summarize(h.sets) }))
     .filter(h => h.sum.loadKey === latest.loadKey && h.sum.tempo === latest.tempo)
     .slice(-5);
   if (comparable.length < 3) {
-    return { status: 'insufficient', label: 'NOT ENOUGH DATA', comparable, note: `${comparable.length}/3 comparable sessions` };
+    return { status: 'insufficient', label: 'YETERSİZ VERİ', comparable, note: `${comparable.length}/3 karşılaştırılabilir seans` };
   }
   const vals = comparable.map(h => h.sum.effAvg);
   const half = Math.floor(vals.length / 2);
   const early = vals.slice(0, half).reduce((a, b) => a + b, 0) / half;
   const late = vals.slice(-half).reduce((a, b) => a + b, 0) / half;
   const delta = early ? (late - early) / early : 0;
-  let status = 'stable', label = '→ STABLE';
-  if (delta > 0.04) { status = 'improving'; label = '↑ IMPROVING'; }
-  else if (delta < -0.04) { status = 'declining'; label = '↓ DECLINING'; }
-  // Declining alarm only when the last sessions are consistently lower
+  let status = 'stable', label = '→ STABİL';
+  if (delta > 0.04) { status = 'improving'; label = '↑ GELİŞİYOR'; }
+  else if (delta < -0.04) { status = 'declining'; label = '↓ DÜŞÜYOR'; }
   const consecutiveDown = countConsecutiveDown(vals);
-  return { status, label, delta, comparable, consecutiveDown, note: `${comparable.length} comparable sessions · ${Math.round(delta * 100)}% effective reps` };
+  return { status, label, delta, comparable, consecutiveDown, note: `${comparable.length} karşılaştırılabilir seans · etkili tekrar %${Math.round(delta * 100)}` };
 }
 
 function countConsecutiveDown(vals) {
@@ -90,7 +104,7 @@ function countConsecutiveDown(vals) {
   return n;
 }
 
-// Rep PRs: best single-set reps per load key (exclude finishers).
+// Tekrar PR'ları: yük başına en iyi tek set (finisher hariç).
 export function repPRs(state, exerciseId) {
   const best = {};
   for (const h of exerciseHistory(state, exerciseId)) {
@@ -102,7 +116,6 @@ export function repPRs(state, exerciseId) {
   return best;
 }
 
-// Is this set a new rep PR for its load? (checked before it is added)
 export function isRepPR(state, exerciseId, set) {
   if (EXCLUDED.has(exerciseId)) return false;
   const prs = repPRs(state, exerciseId);
@@ -110,7 +123,7 @@ export function isRepPR(state, exerciseId, set) {
   return prev ? set.reps > prev.reps : false;
 }
 
-// Suggestion: only a message + optional action. Never changes the program by itself.
+// Öneri: yalnızca mesaj + isteğe bağlı aksiyon. Programı kendi kendine asla değiştirmez.
 export function buildSuggestion(state, es, template) {
   const exercise = getExercise(es.exerciseId);
   if (!exercise || es.optional || EXCLUDED.has(es.exerciseId) || es.sets.length < es.plan.sets) return null;
@@ -124,21 +137,21 @@ export function buildSuggestion(state, es, template) {
   const tempoIdx = TEMPO_PROGRESSION.indexOf(sum.tempo);
   if (exercise.loadType === 'dumbbell' && sum.weight != null && sum.weight < maxW) {
     const next = weights.find(w => w > sum.weight);
-    return { key, exerciseId: es.exerciseId, text: `You reached the top of the rep range (${es.plan.maxReps}) on every set at ${sum.weight} kg. Next session: try ${next} kg.`, action: { type: 'weight', weight: next } };
+    return { key, exerciseId: es.exerciseId, text: `${sum.weight} kg ile her sette hedef tekrar aralığının üst sınırına (${es.plan.maxReps}) ulaştın. Sonraki seans: ${next} kg dene.`, action: { type: 'weight', weight: next } };
   }
   if (exercise.loadType === 'band') {
-    return { key, exerciseId: es.exerciseId, text: `Top of the rep range reached on every set. Next session: use a heavier band or slow the eccentric.`, action: tempoIdx >= 0 && tempoIdx < TEMPO_PROGRESSION.length - 1 ? { type: 'tempo', tempo: TEMPO_PROGRESSION[tempoIdx + 1] } : null };
+    return { key, exerciseId: es.exerciseId, text: `Her sette tekrar aralığının üst sınırına ulaştın. Sonraki seans: daha ağır band kullan veya eccentric'i yavaşlat.`, action: tempoIdx >= 0 && tempoIdx < TEMPO_PROGRESSION.length - 1 ? { type: 'tempo', tempo: TEMPO_PROGRESSION[tempoIdx + 1] } : null };
   }
   if (tempoIdx >= 0 && tempoIdx < TEMPO_PROGRESSION.length - 1) {
     const nextTempo = TEMPO_PROGRESSION[tempoIdx + 1];
-    const w = sum.weight != null ? `${sum.weight} kg` : 'this load';
-    return { key, exerciseId: es.exerciseId, text: `Top of the rep range reached with ${w}${sum.weight === maxW ? ' (your max dumbbell)' : ''}. Next session: try ${TEMPO_MAP[nextTempo].label.toLowerCase()}.`, action: { type: 'tempo', tempo: nextTempo } };
+    const w = sum.weight != null ? `${sum.weight} kg` : 'bu yük';
+    return { key, exerciseId: es.exerciseId, text: `${w}${sum.weight === maxW ? ' (maksimum dumbbell)' : ''} ile tekrar aralığının üst sınırına ulaştın. Sonraki seans: ${TEMPO_MAP[nextTempo].label.toLowerCase()} dene.`, action: { type: 'tempo', tempo: nextTempo } };
   }
   const alt = exercise.alternatives?.[0] ? getExercise(exercise.alternatives[0]) : null;
-  return { key, exerciseId: es.exerciseId, text: `Top of the rep range reached with the hardest tempo. Consider a mechanically harder variation${alt ? ` (e.g. ${alt.name})` : ''}.`, action: null };
+  return { key, exerciseId: es.exerciseId, text: `En zor tempoyla tekrar aralığının üst sınırına ulaştın. Mekanik olarak daha zor bir varyasyon düşün${alt ? ` (örn. ${alt.name})` : ''}.`, action: null };
 }
 
-// Session vs previous session of same template, per exercise (excludes finishers).
+// Aynı şablonun önceki seansıyla egzersiz bazlı karşılaştırma (finisher hariç).
 export function compareSessions(current, previous) {
   const rows = [];
   let totalDelta = 0;
@@ -147,15 +160,15 @@ export function compareSessions(current, previous) {
     const ex = getExercise(es.exerciseId);
     const cur = summarize(es.sets);
     const prevEs = previous?.exercises.find(p => p.exerciseId === es.exerciseId);
-    if (!prevEs) { rows.push({ name: ex?.name || es.exerciseId, label: 'New', delta: null }); continue; }
+    if (!prevEs) { rows.push({ name: ex?.name || es.exerciseId, label: 'Yeni', delta: null }); continue; }
     const prev = summarize(prevEs.sets);
     if (prev.loadKey !== cur.loadKey || prev.tempo !== cur.tempo) {
-      rows.push({ name: ex?.name || es.exerciseId, label: 'Load/tempo changed', delta: null });
+      rows.push({ name: ex?.name || es.exerciseId, label: 'Yük/tempo değişti', delta: null });
       continue;
     }
     const d = cur.total - prev.total;
     totalDelta += d;
-    rows.push({ name: ex?.name || es.exerciseId, label: d === 0 ? 'Stable' : `${d > 0 ? '+' : ''}${d} reps`, delta: d });
+    rows.push({ name: ex?.name || es.exerciseId, label: d === 0 ? 'Stabil' : `${d > 0 ? '+' : ''}${d} tekrar`, delta: d });
   }
   return { rows, totalDelta, hasPrevious: !!previous };
 }

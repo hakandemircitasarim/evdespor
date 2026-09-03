@@ -1,5 +1,6 @@
-// Service worker: precache app shell + demo media so workouts never need the network.
-const VERSION = 'evdespor-v1';
+// Service worker: uygulama kabuğu + demo medyası önbelleğe alınır, antrenman ağ gerektirmez.
+// Bu dosya scripts/build-sw.py tarafından üretilir. Elle düzenleme.
+const VERSION = 'evdespor-cce9024633';
 const PRECACHE = [
   "./index.html",
   "./manifest.webmanifest",
@@ -12,6 +13,7 @@ const PRECACHE = [
   "./js/engine/workout.js",
   "./js/store.js",
   "./js/ui/common.js",
+  "./js/ui/history.js",
   "./js/ui/library.js",
   "./js/ui/onboarding.js",
   "./js/ui/program.js",
@@ -89,10 +91,20 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (url.origin !== location.origin) return;
+  // Navigasyon ve sw.js: önce ağ (güncellemeleri hızlı al), düşerse önbellek.
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('/sw.js')) {
+    e.respondWith(fetch(e.request).then(res => {
+      const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return res;
+    }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html'))));
+    return;
+  }
+  // Diğer her şey: önce önbellek.
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(hit => hit || fetch(e.request).then(res => {
-      if (res.ok && new URL(e.request.url).origin === location.origin) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
+      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
       return res;
-    }).catch(() => caches.match('./index.html')))
+    }))
   );
 });

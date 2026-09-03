@@ -3,6 +3,10 @@
 Personal, offline-first, installable PWA for tracking home resistance training during a cut.
 No backend, no account, no build step. Plain HTML/CSS/ES modules + a service worker.
 
+## Geliştirme
+
+Arayüz Türkçe, hareket adları İngilizce. Kod değişikliğinden sonra `python3 scripts/build-sw.py` çalıştır: precache listesi ve içerik hash'inden türeyen service worker sürümü yeniden üretilir; sürüm değişmezse telefondaki PWA eski dosyaları kullanmaya devam eder. Pages deploy'u her push'ta otomatik.
+
 ## Run
 
 Any static file server works (a service worker needs `http://localhost` or `https://`):
@@ -32,7 +36,8 @@ js/data/exercises.js    exercise library: cues, alternatives, anchor substitutes
 js/data/program.js      default 7-day cycle as structured data
 js/engine/workout.js    session building, unilateral L/R sets, rest defaults, restriction, next-workout logic
 js/engine/progress.js   trend (same load + same tempo, RIR-aware), suggestions, rep PRs, session comparison
-js/ui/*.js              screens: today, workout (+ rest timer, finisher), summary, program (+ edit), progress, settings, library/detail, onboarding
+js/ui/*.js              screens: today, workout (+ rest timer, finisher), summary, program (+ edit), progress, history, settings, library/detail, onboarding
+scripts/build-sw.py     regenerates sw.js (precache list + content-hash version)
 assets/demos/           two-frame demo images (start/end position), shown as a slow loop
 ```
 

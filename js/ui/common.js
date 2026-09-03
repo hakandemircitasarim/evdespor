@@ -1,4 +1,4 @@
-// Shared UI helpers.
+// Ortak UI yardımcıları.
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11,20 +11,20 @@ export function el(html) {
 
 export function fmtDuration(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
-  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min${m === 0 ? ` ${s}s` : ''}`;
+  return m >= 60 ? `${Math.floor(m / 60)} sa ${m % 60} dk` : `${m} dk${m === 0 ? ` ${s} sn` : ''}`;
 }
 export function fmtClock(sec) {
   sec = Math.max(0, Math.round(sec));
   return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
 }
 export function fmtDate(ts) {
-  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return new Date(ts).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 }
 export function daysAgo(ts) {
   const d = Math.floor((Date.now() - ts) / 86400000);
-  if (d <= 0) return 'Today';
-  if (d === 1) return 'Yesterday';
-  return `${d} days ago`;
+  if (d <= 0) return 'Bugün';
+  if (d === 1) return 'Dün';
+  return `${d} gün önce`;
 }
 
 let toastTimer;
@@ -36,7 +36,7 @@ export function toast(msg, ms = 1800) {
   toastTimer = setTimeout(() => t.remove(), ms);
 }
 
-// Bottom sheet. Returns close function. content = HTML string or element.
+// Alt panel. content = HTML string veya element.
 export function sheet(content, { onClose } = {}) {
   const ov = el(`<div class="overlay sheet"><div class="panel fade"></div></div>`);
   const panel = $('.panel', ov);
@@ -47,13 +47,13 @@ export function sheet(content, { onClose } = {}) {
   return { close, panel };
 }
 
-export function confirmSheet(title, text, { okLabel = 'CONFIRM', danger = false } = {}) {
+export function confirmSheet(title, text, { okLabel = 'ONAYLA', danger = false } = {}) {
   return new Promise(res => {
     const s = sheet(`
       <div class="title sm">${esc(title)}</div>
       <p class="sub">${esc(text)}</p>
       <div class="btn-row mt">
-        <button class="btn ghost" data-a="no">CANCEL</button>
+        <button class="btn ghost" data-a="no">VAZGEÇ</button>
         <button class="btn ${danger ? 'danger' : 'primary'}" data-a="yes">${esc(okLabel)}</button>
       </div>`, { onClose: () => res(false) });
     $('[data-a=no]', s.panel).onclick = () => { s.close(); };
@@ -67,8 +67,8 @@ export function promptNumber(title, value, { min = 0, max = 999, step = 1 } = {}
       <div class="title sm">${esc(title)}</div>
       <div class="field"><input type="number" inputmode="decimal" value="${value ?? ''}" min="${min}" max="${max}" step="${step}"></div>
       <div class="btn-row mt">
-        <button class="btn ghost" data-a="no">CANCEL</button>
-        <button class="btn primary" data-a="yes">OK</button>
+        <button class="btn ghost" data-a="no">VAZGEÇ</button>
+        <button class="btn primary" data-a="yes">TAMAM</button>
       </div>`, { onClose: () => res(null) });
     const inp = $('input', s.panel);
     setTimeout(() => { inp.focus(); inp.select(); }, 50);
@@ -89,7 +89,7 @@ export function demoHTML(exercise, small = false) {
       ${m.frames[1] ? `<img src="${m.frames[1]}" alt="" class="f1" loading="lazy" decoding="async">` : ''}
     </div>`;
   }
-  return `<div class="demo ${small ? 'small' : ''}" data-demo="${exercise.id}"><div class="ph">${ICON_PLACEHOLDER}<span>${small ? 'NO DEMO' : 'NO DEMO · SEE CUES'}</span></div></div>`;
+  return `<div class="demo ${small ? 'small' : ''}" data-demo="${exercise.id}"><div class="ph">${ICON_PLACEHOLDER}<span>${small ? 'DEMO YOK' : 'DEMO YOK · İPUÇLARINA BAK'}</span></div></div>`;
 }
 
 export function vibrate(pattern) {
