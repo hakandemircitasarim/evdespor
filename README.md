@@ -14,7 +14,7 @@ python3 -m http.server 8080
 
 ## Install on Samsung Galaxy S23 Ultra
 
-1. Host the folder over HTTPS (GitHub Pages works: Settings → Pages → deploy from branch, root).
+1. Live URL (GitHub Pages, deployed by `.github/workflows/pages.yml` on every push): https://hakandemircitasarim.github.io/evdespor/
 2. Open the URL in Chrome → menu → **Add to Home screen** / **Install app**.
 3. First launch precaches the app shell and all demo media, so workouts do not need a network after that.
 
